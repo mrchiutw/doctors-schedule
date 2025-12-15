@@ -14,6 +14,7 @@
             --night-color: #d32f2f; /* 大夜紅 */
             --small-night-color: #1976d2; /* 小夜藍 */
             --off-color: #9e9e9e; /* 休假灰 */
+            --weekend-bg: #e9ecef; /* 週末背景灰 */
         }
 
         body {
@@ -53,7 +54,6 @@
             gap: 10px;
         }
 
-        /* 輸入區塊樣式 */
         .input-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -87,12 +87,12 @@
             box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.1);
         }
 
-        /* 按鈕區塊 */
         .btn-group {
             display: flex;
             gap: 15px;
             justify-content: center;
             margin-top: 10px;
+            flex-wrap: wrap;
         }
 
         button {
@@ -111,21 +111,14 @@
             box-shadow: 0 4px 6px rgba(0, 86, 179, 0.2);
         }
 
-        .btn-generate:hover {
-            background-color: #004494;
-            transform: translateY(-1px);
-        }
+        .btn-generate:hover { background-color: #004494; transform: translateY(-1px); }
 
-        .btn-print {
-            background-color: #6c757d;
-            color: white;
-        }
+        .btn-print { background-color: #6c757d; color: white; }
+        .btn-print:hover { background-color: #5a6268; }
 
-        .btn-print:hover {
-            background-color: #5a6268;
-        }
+        .btn-excel { background-color: #28a745; color: white; }
+        .btn-excel:hover { background-color: #218838; }
 
-        /* 結果標題 */
         #resultTitle {
             text-align: center;
             margin-top: 40px;
@@ -134,7 +127,6 @@
             font-weight: bold;
         }
 
-        /* 表格樣式 */
         .table-responsive {
             overflow-x: auto;
             margin-top: 20px;
@@ -159,13 +151,11 @@
             white-space: nowrap;
         }
 
-        tr:nth-child(even) {
-            background-color: #fafafa;
-        }
+        tr:nth-child(even) { background-color: #fafafa; }
+        tr:hover { background-color: #f1f8ff; }
 
-        tr:hover {
-            background-color: #f1f8ff;
-        }
+        /* 週末樣式 */
+        .weekend-row { background-color: var(--weekend-bg) !important; }
 
         /* 班別顏色 */
         .shift-day { font-weight: bold; color: black; }
@@ -173,7 +163,19 @@
         .shift-bn { font-weight: bold; color: var(--night-color); }
         .shift-off { color: var(--off-color); }
 
-        /* 列印設定 */
+        /* 統計區塊 */
+        .stats-container {
+            margin-top: 40px;
+            border-top: 2px dashed #ccc;
+            padding-top: 20px;
+        }
+        .stats-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
         @media print {
             body { background: white; padding: 0; }
             .container { box-shadow: none; width: 100%; max-width: none; padding: 0; }
@@ -183,6 +185,7 @@
             th { background-color: #ddd !important; color: black !important; -webkit-print-color-adjust: exact; }
             .shift-sn { color: blue !important; }
             .shift-bn { color: red !important; }
+            .weekend-row { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
         }
     </style>
 </head>
@@ -228,22 +231,33 @@
     <div class="btn-group">
         <button class="btn-generate" onclick="generateSchedule()">⚡ 開始自動排班</button>
         <button class="btn-print" onclick="window.print()">🖨️ 列印班表</button>
+        <button class="btn-excel" onclick="exportToCSV()">📥 匯出 Excel</button>
     </div>
 
     <h2 id="resultTitle"></h2>
+    
     <div id="tableContainer" class="table-responsive"></div>
+
+    <div id="statsContainer" class="stats-container" style="display:none;">
+        <div class="stats-title"> 班數統計 </div>
+        <div id="statsTable" class="table-responsive"></div>
+    </div>
 </div>
 
 <script>
+    // 全域變數，供匯出功能使用
+    let globalScheduleData = [];
+    let globalTitle = "";
+    let globalDocs = [];
+
     function generateSchedule() {
-        // === 1. 讀取與驗證輸入 (對應 VBA A14, A17, A11) ===
         const dept = document.getElementById("inputDept").value.trim();
         const monthVal = document.getElementById("inputMonth").value.trim();
         let daysInMonth = parseInt(document.getElementById("inputDays").value);
         const excludedStr = document.getElementById("inputExcluded").value.trim();
         const targetShift = document.getElementById("selectShift").value;
 
-        // A14 嚴格驗證
+        // --- 驗證邏輯 ---
         if (!monthVal || isNaN(monthVal)) {
             alert("【錯誤】月份格式錯誤！\n請輸入 1 到 12 之間的數字。");
             return;
@@ -254,25 +268,21 @@
             return;
         }
 
-        // A11 天數防呆
         if (isNaN(daysInMonth) || daysInMonth < 28 || daysInMonth > 31) {
             alert("天數設定異常 (請輸入 28~31)，本次將以 30 天計算。");
             daysInMonth = 30;
             document.getElementById("inputDays").value = 30;
         }
 
-        // 處理排除名單 (對應 VBA A5)
-        // JS 陣列從 0 開始，這裡我們用 index 0-9 代表 醫師A-醫師J
+        // --- 處理排除名單 ---
         let excludedDocs = new Array(10).fill(false);
         let hasExclusion = false;
         let docListStr = "";
 
         if (excludedStr) {
-            // 支援全形頓號、全形逗號
             const parts = excludedStr.replace(/、/g, ",").replace(/，/g, ",").split(",");
             parts.forEach(p => {
                 let name = p.trim().toUpperCase();
-                // 比對 醫師A ~ 醫師J
                 for (let i = 0; i < 10; i++) {
                     let docName = "醫師" + String.fromCharCode(64 + (i + 1));
                     if (name === docName) {
@@ -283,132 +293,120 @@
                 }
             });
             if (!hasExclusion) {
-                alert("指定排除醫師格式錯誤！請輸入如「醫師A,醫師B」。");
-                // VBA 會繼續跑，但這裡我們提示後繼續
+                alert("指定排除醫師格式錯誤！請輸入如「醫師A,醫師B」。本班表將不排除任何班別");
             }
         }
 
-        // 準備標題 (對應 VBA Title Logic)
+        // --- 標題生成 ---
         const chiMonths = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"];
-        const title = `${dept}${chiMonths[mNum]}月班表`;
-        document.getElementById("resultTitle").innerText = title;
+        globalTitle = `${dept}${chiMonths[mNum]}月班表`;
+        document.getElementById("resultTitle").innerText = globalTitle;
 
-        // === 2. 核心排班邏輯 (對應 VBA Loop) ===
-        
-        // 資料結構初始化
-        // schedule[day-1][doctor_index] (JS array 0-based)
+        // === 2. 核心排班邏輯 ===
         let schedule = []; 
         let lastShift = new Array(10).fill("");
         let shiftCounts = new Array(10).fill(0);
+        
+        // 用來統計每個人各種班別的數量 (for 統計表)
+        // stats[doc_index] = { "白班":0, "小夜":0, "大夜":0, "休":0 }
+        let stats = Array.from({length: 10}, () => ({ "白班":0, "小夜":0, "大夜":0, "休":0 }));
+
         let attemptCount = 0;
         const dailyShifts = ["白班", "小夜", "大夜"];
         let isSuccess = false;
 
-        // 模擬 VBA Do...Loop
-        while (attemptCount < 1000) { // 防止無窮迴圈
+        while (attemptCount < 1000) {
             attemptCount++;
             isSuccess = true;
-            
-            // 重置
             schedule = [];
             for (let i = 0; i < 10; i++) { lastShift[i] = ""; shiftCounts[i] = 0; }
+            // 重置統計
+            stats = Array.from({length: 10}, () => ({ "白班":0, "小夜":0, "大夜":0, "休":0 }));
 
-            // 開始每一天的排班
             for (let day = 1; day <= daysInMonth; day++) {
-                let daySchedule = new Array(10).fill(""); // 暫存當天的班表
-                
-                // 建立可用人員清單 (0-9)
+                let daySchedule = new Array(10).fill("");
                 let availableWorkers = [];
                 for (let i = 0; i < 10; i++) availableWorkers.push(i);
 
-                // 排 白班 -> 小夜 -> 大夜
                 for (let s = 0; s < 3; s++) {
                     let shiftName = dailyShifts[s];
                     let validPick = false;
                     let safetyCount = 0;
-
-                    // 計算當前最小值 (動態平衡)
                     let minCurrentCounts = 100;
+                    
                     for (let i = 0; i < 10; i++) {
                         if (shiftCounts[i] < minCurrentCounts) minCurrentCounts = shiftCounts[i];
                     }
 
-                    // 抽籤迴圈
                     while (!validPick && safetyCount < 50) {
                         safetyCount++;
-                        // 隨機抽一人
                         let randIdx = Math.floor(Math.random() * availableWorkers.length);
                         let candidate = availableWorkers[randIdx];
                         validPick = true;
 
-                        // 規則 1: 小夜不接白 (VBA: If shiftName = "白班" And lastShift(candidate) = "小夜")
-                        if (shiftName === "白班" && lastShift[candidate] === "小夜") {
-                            validPick = false;
-                        }
-
-                        // 規則 2: 排除指定 (VBA: If excludedDocs(candidate) = True And shiftName = targetShift)
-                        // 注意: VBA candidate 是 1-10, JS 是 0-9，邏輯通用
-                        if (hasExclusion && excludedDocs[candidate] && shiftName === targetShift) {
-                            validPick = false;
-                        }
-
-                        // 規則 3: 動態平衡 (VBA: If shiftCounts >= min + 2 ...)
-                        if (shiftCounts[candidate] >= (minCurrentCounts + 2) && safetyCount < 10) {
-                            validPick = false;
-                        }
+                        if (shiftName === "白班" && lastShift[candidate] === "小夜") validPick = false;
+                        if (hasExclusion && excludedDocs[candidate] && shiftName === targetShift) validPick = false;
+                        if (shiftCounts[candidate] >= (minCurrentCounts + 2) && safetyCount < 10) validPick = false;
 
                         if (validPick) {
                             daySchedule[candidate] = shiftName;
                             shiftCounts[candidate]++;
-                            availableWorkers.splice(randIdx, 1); // 移除已排班的人
+                            stats[candidate][shiftName]++; // 增加統計
+                            availableWorkers.splice(randIdx, 1);
                         }
                     }
-
-                    if (!validPick) {
-                        isSuccess = false;
-                        break; // 該班別排失敗，跳出
-                    }
+                    if (!validPick) { isSuccess = false; break; }
                 }
                 
-                if (!isSuccess) break; // 該天排失敗，跳出
+                if (!isSuccess) break;
 
-                // 填入休假
                 while (availableWorkers.length > 0) {
                     let c = availableWorkers.shift();
                     daySchedule[c] = "休";
+                    stats[c]["休"]++; // 增加統計
                 }
 
-                // 更新 lastShift 並存入總表
                 schedule.push(daySchedule);
-                for (let i = 0; i < 10; i++) {
-                    lastShift[i] = daySchedule[i];
-                }
+                for (let i = 0; i < 10; i++) { lastShift[i] = daySchedule[i]; }
             }
 
-            // 最終平衡檢查 (VBA Check)
             if (isSuccess) {
                 let max = Math.max(...shiftCounts);
                 let min = Math.min(...shiftCounts);
-                if ((max - min) <= 1) {
-                    break; // 成功且平衡，結束大迴圈
-                }
+                if ((max - min) <= 1) break;
             }
         }
 
         if (!isSuccess) {
-            alert("運算超時或條件過於嚴苛，請重試或放寬條件。");
+            alert("運算超時，請重試。");
             return;
         }
 
-        // === 3. 輸出 HTML 表格 ===
-        let html = `<table><thead><tr><th>日期</th>`;
-        for (let i = 1; i <= 10; i++) {
-            html += `<th>醫師${String.fromCharCode(64 + i)}</th>`;
-        }
+        // 儲存資料供匯出使用
+        globalScheduleData = schedule;
+        globalDocs = [];
+        for (let i = 1; i <= 10; i++) globalDocs.push(`醫師${String.fromCharCode(64 + i)}`);
+
+        // === 3. 輸出 HTML 表格 (新增週末判斷) ===
+        // 假設今年
+        const currentYear = new Date().getFullYear();
+        
+        let html = `<table><thead><tr><th>日期</th><th>星期</th>`;
+        globalDocs.forEach(doc => { html += `<th>${doc}</th>`; });
         html += `</tr></thead><tbody>`;
 
+        const weekDays = ["日", "一", "二", "三", "四", "五", "六"];
+
         for (let d = 0; d < schedule.length; d++) {
-            html += `<tr><td>${d + 1}</td>`; // 日期
+            // 計算日期物件
+            let dateObj = new Date(currentYear, mNum - 1, d + 1);
+            let dayOfWeek = dateObj.getDay(); // 0=週日, 6=週六
+            let isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+            let rowClass = isWeekend ? "weekend-row" : "";
+            let weekStr = weekDays[dayOfWeek];
+
+            html += `<tr class="${rowClass}"><td>${d + 1}</td><td>${weekStr}</td>`;
+            
             for (let doc = 0; doc < 10; doc++) {
                 let val = schedule[d][doc];
                 let cssClass = "";
@@ -424,13 +422,60 @@
         html += `</tbody></table>`;
         document.getElementById("tableContainer").innerHTML = html;
 
-        // 訊息提示 (VBA MsgBox)
-        let msg = `排班完成！\n標題：${title}\n天數：${daysInMonth} 天`;
-        if (hasExclusion) {
-            msg += `\n規則：【${docListStr.trim()}】不排【${targetShift}】。`;
+        // === 4. 輸出統計表 (新增功能) ===
+        let statsHtml = `<table><thead><tr><th>醫師</th><th>白班</th><th>小夜</th><th>大夜</th><th>休假</th><th>總上班數</th></tr></thead><tbody>`;
+        for(let i=0; i<10; i++) {
+            let totalWork = stats[i]["白班"] + stats[i]["小夜"] + stats[i]["大夜"];
+            statsHtml += `<tr>
+                <td>${globalDocs[i]}</td>
+                <td>${stats[i]["白班"]}</td>
+                <td>${stats[i]["小夜"]}</td>
+                <td>${stats[i]["大夜"]}</td>
+                <td>${stats[i]["休"]}</td>
+                <td><strong>${totalWork}</strong></td>
+            </tr>`;
         }
-        // 為了不干擾網頁體驗，我們可以用 console 或簡單的 Toast，這裡保留 alert 作為簡單回饋
+        statsHtml += `</tbody></table>`;
+        document.getElementById("statsTable").innerHTML = statsHtml;
+        document.getElementById("statsContainer").style.display = "block";
+
+        let msg = `排班完成！\n標題：${globalTitle}\n天數：${daysInMonth} 天`;
+        if (hasExclusion) msg += `\n規則：【${docListStr.trim()}】不排【${targetShift}】。`;
         // alert(msg); 
+    }
+
+    // === 新增：匯出 Excel (CSV) 功能 ===
+    function exportToCSV() {
+        if (globalScheduleData.length === 0) {
+            alert("請先產生班表！");
+            return;
+        }
+
+        // BOM for Excel to read UTF-8 correctly
+        let csvContent = "\uFEFF";
+        
+        // 標題列
+        csvContent += "日期,";
+        globalDocs.forEach(doc => { csvContent += doc + ","; });
+        csvContent += "\n";
+
+        // 資料列
+        globalScheduleData.forEach((row, index) => {
+            csvContent += `${index + 1},`; // 日期
+            row.forEach(shift => { csvContent += shift + ","; });
+            csvContent += "\n";
+        });
+
+        // 建立下載連結
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${globalTitle}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
 
