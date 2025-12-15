@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>醫師專用智能排班系統</title>
+    <style>
+        :root {
+            --primary-color: #0056b3; /* 醫療藍 */
+            --secondary-color: #f0f7ff; /* 淺藍背景 */
+            --border-color: #dde0e3;
+            --text-color: #333;
+            --danger-color: #dc3545;
+            --night-color: #d32f2f; /* 大夜紅 */
+            --small-night-color: #1976d2; /* 小夜藍 */
+            --off-color: #9e9e9e; /* 休假灰 */
+        }
+
+        body {
+            font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+            background-color: #f4f6f8;
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--secondary-color);
+            padding-bottom: 15px;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            margin: 0;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        /* 輸入區塊樣式 */
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        input, select {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.1);
+        }
+
+        /* 按鈕區塊 */
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-generate {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 86, 179, 0.2);
+        }
+
+        .btn-generate:hover {
+            background-color: #004494;
+            transform: translateY(-1px);
+        }
+
+        .btn-print {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .btn-print:hover {
+            background-color: #5a6268;
+        }
+
+        /* 結果標題 */
+        #resultTitle {
+            text-align: center;
+            margin-top: 40px;
+            font-size: 22px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        /* 表格樣式 */
+        .table-responsive {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 15px;
+        }
+
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            text-align: center;
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        tr:hover {
+            background-color: #f1f8ff;
+        }
+
+        /* 班別顏色 */
+        .shift-day { font-weight: bold; color: black; }
+        .shift-sn { font-weight: bold; color: var(--small-night-color); }
+        .shift-bn { font-weight: bold; color: var(--night-color); }
+        .shift-off { color: var(--off-color); }
+
+        /* 列印設定 */
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; width: 100%; max-width: none; padding: 0; }
+            .input-grid, .btn-group, header { display: none; }
+            #resultTitle { margin-top: 0; font-size: 24px; }
+            table { font-size: 12px; }
+            th { background-color: #ddd !important; color: black !important; -webkit-print-color-adjust: exact; }
+            .shift-sn { color: blue !important; }
+            .shift-bn { color: red !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>總醫師的救星</h1>
+        <p style="color: #666; font-size: 14px; margin-top:5px;">CHIU 長庚紀念醫院排班系統</p>
+    </header>
+
+    <div class="input-grid">
+        <div class="input-group">
+            <label for="inputDept">1. 科別名稱</label>
+            <input type="text" id="inputDept" placeholder="例如：急診科" value="急診科">
+        </div>
+
+        <div class="input-group">
+            <label for="inputMonth">2. 月份 (1-12)</label>
+            <input type="number" id="inputMonth" placeholder="輸入數字" min="1" max="12">
+        </div>
+
+        <div class="input-group">
+            <label for="inputDays">3. 本月天數</label>
+            <input type="number" id="inputDays" placeholder="預設 30" min="28" max="31" value="30">
+        </div>
+
+        <div class="input-group">
+            <label for="inputExcluded">4. 指定排除醫師</label>
+            <input type="text" id="inputExcluded" placeholder="如：醫師A,醫師B">
+        </div>
+
+        <div class="input-group">
+            <label for="selectShift">5. 該醫師不排之班別</label>
+            <select id="selectShift">
+                <option value="大夜">大夜</option>
+                <option value="小夜">小夜</option>
+                <option value="白班">白班</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-generate" onclick="generateSchedule()">⚡ 開始自動排班</button>
+        <button class="btn-print" onclick="window.print()">🖨️ 列印班表</button>
+    </div>
+
+    <h2 id="resultTitle"></h2>
+    <div id="tableContainer" class="table-responsive"></div>
+</div>
+
+<script>
+    function generateSchedule() {
+        // === 1. 讀取與驗證輸入 (對應 VBA A14, A17, A11) ===
+        const dept = document.getElementById("inputDept").value.trim();
+        const monthVal = document.getElementById("inputMonth").value.trim();
+        let daysInMonth = parseInt(document.getElementById("inputDays").value);
+        const excludedStr = document.getElementById("inputExcluded").value.trim();
+        const targetShift = document.getElementById("selectShift").value;
+
+        // A14 嚴格驗證
+        if (!monthVal || isNaN(monthVal)) {
+            alert("【錯誤】月份格式錯誤！\n請輸入 1 到 12 之間的數字。");
+            return;
+        }
+        const mNum = parseInt(monthVal);
+        if (mNum < 1 || mNum > 12) {
+            alert(`【錯誤】月份錯誤！\n您輸入了: ${mNum}\n請輸入 1 到 12 之間的數字。`);
+            return;
+        }
+
+        // A11 天數防呆
+        if (isNaN(daysInMonth) || daysInMonth < 28 || daysInMonth > 31) {
+            alert("天數設定異常 (請輸入 28~31)，本次將以 30 天計算。");
+            daysInMonth = 30;
+            document.getElementById("inputDays").value = 30;
+        }
+
+        // 處理排除名單 (對應 VBA A5)
+        // JS 陣列從 0 開始，這裡我們用 index 0-9 代表 醫師A-醫師J
+        let excludedDocs = new Array(10).fill(false);
+        let hasExclusion = false;
+        let docListStr = "";
+
+        if (excludedStr) {
+            // 支援全形頓號、全形逗號
+            const parts = excludedStr.replace(/、/g, ",").replace(/，/g, ",").split(",");
+            parts.forEach(p => {
+                let name = p.trim().toUpperCase();
+                // 比對 醫師A ~ 醫師J
+                for (let i = 0; i < 10; i++) {
+                    let docName = "醫師" + String.fromCharCode(64 + (i + 1));
+                    if (name === docName) {
+                        excludedDocs[i] = true;
+                        hasExclusion = true;
+                        docListStr += name + " ";
+                    }
+                }
+            });
+            if (!hasExclusion) {
+                alert("指定排除醫師格式錯誤！請輸入如「醫師A,醫師B」。");
+                // VBA 會繼續跑，但這裡我們提示後繼續
+            }
+        }
+
+        // 準備標題 (對應 VBA Title Logic)
+        const chiMonths = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二"];
+        const title = `${dept}${chiMonths[mNum]}月班表`;
+        document.getElementById("resultTitle").innerText = title;
+
+        // === 2. 核心排班邏輯 (對應 VBA Loop) ===
+        
+        // 資料結構初始化
+        // schedule[day-1][doctor_index] (JS array 0-based)
+        let schedule = []; 
+        let lastShift = new Array(10).fill("");
+        let shiftCounts = new Array(10).fill(0);
+        let attemptCount = 0;
+        const dailyShifts = ["白班", "小夜", "大夜"];
+        let isSuccess = false;
+
+        // 模擬 VBA Do...Loop
+        while (attemptCount < 1000) { // 防止無窮迴圈
+            attemptCount++;
+            isSuccess = true;
+            
+            // 重置
+            schedule = [];
+            for (let i = 0; i < 10; i++) { lastShift[i] = ""; shiftCounts[i] = 0; }
+
+            // 開始每一天的排班
+            for (let day = 1; day <= daysInMonth; day++) {
+                let daySchedule = new Array(10).fill(""); // 暫存當天的班表
+                
+                // 建立可用人員清單 (0-9)
+                let availableWorkers = [];
+                for (let i = 0; i < 10; i++) availableWorkers.push(i);
+
+                // 排 白班 -> 小夜 -> 大夜
+                for (let s = 0; s < 3; s++) {
+                    let shiftName = dailyShifts[s];
+                    let validPick = false;
+                    let safetyCount = 0;
+
+                    // 計算當前最小值 (動態平衡)
+                    let minCurrentCounts = 100;
+                    for (let i = 0; i < 10; i++) {
+                        if (shiftCounts[i] < minCurrentCounts) minCurrentCounts = shiftCounts[i];
+                    }
+
+                    // 抽籤迴圈
+                    while (!validPick && safetyCount < 50) {
+                        safetyCount++;
+                        // 隨機抽一人
+                        let randIdx = Math.floor(Math.random() * availableWorkers.length);
+                        let candidate = availableWorkers[randIdx];
+                        validPick = true;
+
+                        // 規則 1: 小夜不接白 (VBA: If shiftName = "白班" And lastShift(candidate) = "小夜")
+                        if (shiftName === "白班" && lastShift[candidate] === "小夜") {
+                            validPick = false;
+                        }
+
+                        // 規則 2: 排除指定 (VBA: If excludedDocs(candidate) = True And shiftName = targetShift)
+                        // 注意: VBA candidate 是 1-10, JS 是 0-9，邏輯通用
+                        if (hasExclusion && excludedDocs[candidate] && shiftName === targetShift) {
+                            validPick = false;
+                        }
+
+                        // 規則 3: 動態平衡 (VBA: If shiftCounts >= min + 2 ...)
+                        if (shiftCounts[candidate] >= (minCurrentCounts + 2) && safetyCount < 10) {
+                            validPick = false;
+                        }
+
+                        if (validPick) {
+                            daySchedule[candidate] = shiftName;
+                            shiftCounts[candidate]++;
+                            availableWorkers.splice(randIdx, 1); // 移除已排班的人
+                        }
+                    }
+
+                    if (!validPick) {
+                        isSuccess = false;
+                        break; // 該班別排失敗，跳出
+                    }
+                }
+                
+                if (!isSuccess) break; // 該天排失敗，跳出
+
+                // 填入休假
+                while (availableWorkers.length > 0) {
+                    let c = availableWorkers.shift();
+                    daySchedule[c] = "休";
+                }
+
+                // 更新 lastShift 並存入總表
+                schedule.push(daySchedule);
+                for (let i = 0; i < 10; i++) {
+                    lastShift[i] = daySchedule[i];
+                }
+            }
+
+            // 最終平衡檢查 (VBA Check)
+            if (isSuccess) {
+                let max = Math.max(...shiftCounts);
+                let min = Math.min(...shiftCounts);
+                if ((max - min) <= 1) {
+                    break; // 成功且平衡，結束大迴圈
+                }
+            }
+        }
+
+        if (!isSuccess) {
+            alert("運算超時或條件過於嚴苛，請重試或放寬條件。");
+            return;
+        }
+
+        // === 3. 輸出 HTML 表格 ===
+        let html = `<table><thead><tr><th>日期</th>`;
+        for (let i = 1; i <= 10; i++) {
+            html += `<th>醫師${String.fromCharCode(64 + i)}</th>`;
+        }
+        html += `</tr></thead><tbody>`;
+
+        for (let d = 0; d < schedule.length; d++) {
+            html += `<tr><td>${d + 1}</td>`; // 日期
+            for (let doc = 0; doc < 10; doc++) {
+                let val = schedule[d][doc];
+                let cssClass = "";
+                if (val === "大夜") cssClass = "shift-bn";
+                else if (val === "小夜") cssClass = "shift-sn";
+                else if (val === "白班") cssClass = "shift-day";
+                else cssClass = "shift-off";
+                
+                html += `<td class="${cssClass}">${val}</td>`;
+            }
+            html += `</tr>`;
+        }
+        html += `</tbody></table>`;
+        document.getElementById("tableContainer").innerHTML = html;
+
+        // 訊息提示 (VBA MsgBox)
+        let msg = `排班完成！\n標題：${title}\n天數：${daysInMonth} 天`;
+        if (hasExclusion) {
+            msg += `\n規則：【${docListStr.trim()}】不排【${targetShift}】。`;
+        }
+        // 為了不干擾網頁體驗，我們可以用 console 或簡單的 Toast，這裡保留 alert 作為簡單回饋
+        // alert(msg); 
+    }
+</script>
+
+</body>
+</html>
